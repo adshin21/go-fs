@@ -10,5 +10,5 @@ func TestCASPathTransformFunc(t *testing.T) {
 	key := "abc"
 	exp := "a9993e364706816aba3e25717850c26c9cd0d89d"
 	val := CASPathTransformFunc(key)
-	assert.Equal(t, val.Original, exp)
+	assert.Equal(t, val.FileName, exp)
 }

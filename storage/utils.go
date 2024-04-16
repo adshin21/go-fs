@@ -3,18 +3,8 @@ package storage
 import (
 	"crypto/sha1"
 	"encoding/hex"
-	"fmt"
 	"strings"
 )
-
-type PathKey struct {
-	PathName string
-	Original string
-}
-
-func (pk *PathKey) FileName() string {
-	return fmt.Sprintf("%s/%s", pk.PathName, pk.Original)
-}
 
 func CASPathTransformFunc(key string) PathKey {
 	hash := sha1.Sum([]byte(key))
@@ -30,6 +20,11 @@ func CASPathTransformFunc(key string) PathKey {
 
 	return PathKey{
 		PathName: strings.Join(path, "/"),
-		Original: hashStr,
+		FileName: hashStr,
 	}
 }
+
+func cleanPath(s string) string {
+	return strings.TrimRight(s, "/") + "/"
+}
+
