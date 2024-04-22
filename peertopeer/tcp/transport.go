@@ -1,7 +1,9 @@
 package tcp
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"net"
 
 	"github.com/adshin21/go-fs/peertopeer"
@@ -28,6 +30,15 @@ func NewTCPTransport(opts TCPTransportOpts) *TCPTransport {
 	}
 }
 
+func (t *TCPTransport) Dial(addr string) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	go t.handleConn(conn, true)
+	return nil
+}
+
 // for reading incoming messages from other peers in the network
 func (t *TCPTransport) Consume() <-chan peertopeer.RPC {
 	return t.rpcch
@@ -43,21 +54,30 @@ func (t *TCPTransport) ListenAndAccept() error {
 
 	// Accepting connection
 	go t.startAcceptLoop()
-
+	log.Printf("Accepting connection on %s\n", t.ListenAdrr)
 	return nil
+}
+
+func (t *TCPTransport) Close() error {
+	return t.listener.Close()
 }
 
 func (t *TCPTransport) startAcceptLoop() {
 	for {
 		conn, err := t.listener.Accept()
+
+		if errors.Is(err, net.ErrClosed) {
+			log.Println("TCP: Connection Error: ", err)
+			return
+		}
 		if err != nil {
 			fmt.Printf("TCP: Accept Error: %s\n", err)
 		}
-		go t.handleConn(conn)
+		go t.handleConn(conn, false)
 	}
 }
 
-func (t *TCPTransport) handleConn(conn net.Conn) {
+func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
 	var err error
 
 	defer func() {
@@ -67,7 +87,7 @@ func (t *TCPTransport) handleConn(conn net.Conn) {
 		}
 	}()
 
-	peer := NewTCPPerr(conn, true)
+	peer := NewTCPPerr(conn, outbound)
 	if err = t.HandshakeFunc(peer); err != nil {
 		return
 	}
@@ -85,7 +105,12 @@ func (t *TCPTransport) handleConn(conn net.Conn) {
 		if err != nil {
 			return
 		}
-		rpc.From = conn.RemoteAddr()
+		rpc.From = conn.RemoteAddr().String()
+		peer.Wg.Add(1)
+		log.Printf("Waiting currently ................")
 		t.rpcch <- rpc
+		peer.Wg.Wait()
+		log.Printf("Waiting finished, continuing...")
+
 	}
 }

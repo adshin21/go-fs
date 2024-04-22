@@ -1,22 +1,28 @@
 package tcp
 
-import "net"
+import (
+	"net"
+	"sync"
+)
 
 type TCPPeer struct {
-	conn net.Conn
+	// underlying TCP connection of the peer
+	net.Conn
 
 	// true if it is an outboud connection
 	outbound bool
+	Wg       sync.WaitGroup
 }
 
 func NewTCPPerr(conn net.Conn, outbound bool) *TCPPeer {
 	return &TCPPeer{
-		conn:     conn,
+		Conn:     conn,
 		outbound: outbound,
 	}
-} 
+}
 
-// Close implements the peer interface
-func (p *TCPPeer) Close() error {
-	return p.conn.Close()
+// Send implements the peer interface
+func (p *TCPPeer) Send(b []byte) error {
+	_, err := p.Conn.Write(b)
+	return err
 }
