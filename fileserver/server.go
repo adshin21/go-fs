@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/adshin21/go-fs/peertopeer"
 	"github.com/adshin21/go-fs/peertopeer/tcp"
@@ -18,7 +19,8 @@ type Message struct {
 }
 
 type MessageStoreFile struct {
-	Key string
+	Key  string
+	Size int64
 }
 
 // Same like transport options with
@@ -46,48 +48,41 @@ func (s *FileServer) StoreData(key string, r io.Reader) error {
 	// Replicate on the peers over the network
 
 	buf := new(bytes.Buffer)
+	tee := io.TeeReader(r, buf)
+
+	// write to disk
+	n, err := s.store.Write(key, tee)
+
+	if err != nil {
+		return err
+	}
+
 	msg := Message{
 		Payload: MessageStoreFile{
-			Key: key,
+			Key:  key,
+			Size: n,
 		},
 	}
-	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
+
+	msgBuf := new(bytes.Buffer)
+	if err := gob.NewEncoder(msgBuf).Encode(msg); err != nil {
 		return err
 	}
 
 	for _, peer := range s.peers {
-		if err := peer.Send(buf.Bytes()); err != nil {
-			return err
-		}
+		peer.Send(msgBuf.Bytes())
 	}
 
-	// time.Sleep(3 * time.Second)
+	time.Sleep(time.Second * 3)
 
-	// payload := []byte("LARGE FILE")
+	for _, peer := range s.peers {
+		x, err := io.Copy(peer, buf)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("received and written %d bytes to disk\n", x)
+	}
 
-	// for _, peer := range s.peers {
-	// 	if err := peer.Send(payload); err != nil {
-	// 		return err
-	// 	}
-	// }
-
-	// buf := new(bytes.Buffer)
-	// tee := io.TeeReader(r, buf)
-
-	// // write to disk
-	// if err := s.store.Write(key, tee); err != nil {
-	// 	return err
-	// }
-
-	// // make payload and broadcast
-	// p := &DataMessage{
-	// 	Key:  key,
-	// 	Data: buf.Bytes(),
-	// }
-	// return s.broadcast(&Message{
-	// 	From:    "xyz",
-	// 	Payload: p,
-	// })
 	return nil
 }
 
@@ -135,38 +130,40 @@ func (s *FileServer) loop() {
 				fmt.Printf("FS: error: %s\n", err)
 				continue
 			}
-
 			fmt.Printf("FS: payload: %+v\n", m.Payload)
 
-			peer, ok := s.peers[rpc.From]
-
-			if !ok {
-				panic("peer not found in peer map")
+			if err := s.handleMessage(rpc.From, &m); err != nil {
+				log.Printf("FS: error: %s\n", err)
+				return
 			}
-			b := make([]byte, 1000)
-			if _, err := peer.Read(b); err != nil {
-				panic(err)
-			}
-			fmt.Printf("FS: Large file: %s\n", string(b))
-			peer.(*tcp.TCPPeer).Wg.Done()
-
-			// if err := s.handleMessage(&m); err != nil {
-			// 	log.Println(err)
-			// }
 		case <-s.quitch:
 			return
 		}
 	}
 }
 
-func (s *FileServer) handleMessage(m *Message) error {
+func (s *FileServer) handleMessage(from string, m *Message) error {
+	switch msg := m.Payload.(type) {
+	case MessageStoreFile:
+		log.Printf("received data %+v\n", msg)
+		return s.handleMessageStoreFile(from, m.Payload.(MessageStoreFile))
+	default:
+		return fmt.Errorf("unknown message type %T", msg)
+	}
+}
 
-	// switch msg := m.Payload.(type) {
-	// case *DataMessage:
-	// 	log.Printf("received data %+v\n", msg)
-	// default:
-	// 	return fmt.Errorf("unknown message type %T", msg)
-	// }
+func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) error {
+	peer, ok := s.peers[from]
+	if !ok {
+		return fmt.Errorf("peer %s not found in the peer list", from)
+	}
+	n, err := s.store.Write(msg.Key, io.LimitReader(peer, msg.Size))
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("written %d bytes to disk\n", n)
+	peer.(*tcp.TCPPeer).Wg.Done()
 	return nil
 }
 
@@ -201,5 +198,5 @@ func (s *FileServer) broadcast(m *Message) error {
 }
 
 func init() {
-	gob.Register(&MessageStoreFile{})
+	gob.Register(MessageStoreFile{})
 }
