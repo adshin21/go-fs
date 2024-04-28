@@ -62,6 +62,10 @@ func (t *TCPTransport) Close() error {
 	return t.listener.Close()
 }
 
+func (t *TCPTransport) Addr() string {
+	return t.ListenAdrr
+}
+
 func (t *TCPTransport) startAcceptLoop() {
 	for {
 		conn, err := t.listener.Accept()
@@ -99,18 +103,20 @@ func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
 	}
 
 	// Read loop
-	rpc := peertopeer.RPC{}
 	for {
+		rpc := peertopeer.RPC{}
 		err = t.Decoder.Decode(conn, &rpc)
 		if err != nil {
 			return
 		}
 		rpc.From = conn.RemoteAddr().String()
-		peer.Wg.Add(1)
-		log.Printf("Waiting currently ................")
+		if rpc.Stream {
+			peer.wg.Add(1)
+			fmt.Printf("TCP: [%s] recieved stream hence waiting\n", rpc.From)
+			peer.wg.Wait()
+			fmt.Printf("TCP: [%s] stream closed, resuming read loop\n", rpc.From)
+			continue
+		}
 		t.rpcch <- rpc
-		peer.Wg.Wait()
-		log.Printf("Waiting finished, continuing...")
-
 	}
 }

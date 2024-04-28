@@ -11,7 +11,11 @@ type TCPPeer struct {
 
 	// true if it is an outboud connection
 	outbound bool
-	Wg       sync.WaitGroup
+	wg       sync.WaitGroup
+}
+
+func (p *TCPPeer) CloseStream() {
+	p.wg.Done()
 }
 
 func NewTCPPerr(conn net.Conn, outbound bool) *TCPPeer {

@@ -6,4 +6,5 @@ package peertopeer
 type RPC struct {
 	From    string
 	Payload []byte
+	Stream  bool
 }
