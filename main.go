@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -55,20 +56,18 @@ func main() {
 	go s2.Start()
 	time.Sleep(time.Second * 1)
 
-	for i := 0; i < 10; i++ {
-		key := fmt.Sprintf("testdata_%d", i)
-		data := bytes.NewReader([]byte(fmt.Sprintf("My test data %d", i)))
-		s2.StoreData(key, data)
+	key := "testdata"
+	data := bytes.NewReader([]byte("My test data"))
+	s1.StoreData(key, data)
+	r, err := s2.Get("testdata")
+	if err != nil {
+		log.Fatal(err)
 	}
-	// r, err := s2.Get("testdata")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// b, err := io.ReadAll(r)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
+	b, err := io.ReadAll(r)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// fmt.Println(string(b))
-	select {}
+	fmt.Println(string(b))
+	// select {}
 }

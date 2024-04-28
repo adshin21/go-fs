@@ -2,6 +2,7 @@ package fileserver
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -48,7 +49,8 @@ type FileServer struct {
 
 func (s *FileServer) Get(key string) (io.Reader, error) {
 	if s.store.Has(key) {
-		return s.store.Read(key)
+		_, r, err := s.store.Read(key)
+		return r, err
 	}
 	fmt.Printf("don't have file [%s] locally\n", key)
 	msg := Message{
@@ -61,16 +63,17 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 	}
 
 	for _, peer := range s.peers {
-		buf := new(bytes.Buffer)
-		n, err := io.Copy(buf, peer)
+		var fileSize int64
+		binary.Read(peer, binary.LittleEndian, &fileSize)
+		n, err := s.store.Write(key, io.LimitReader(peer, fileSize))
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("FS: received bytes over the network: %d\n", n)
-		fmt.Println(buf.String())
+		fmt.Printf("FS: received bytes over the network: %d from %s\n", n, s.Transport.Addr())
+		peer.CloseStream()
 	}
-	select {}
-	return nil, nil
+	_, r, err := s.store.Read(key)
+	return r, err
 }
 
 func (s *FileServer) StoreData(key string, r io.Reader) error {
@@ -183,9 +186,14 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 	if !s.store.Has(msg.Key) {
 		return fmt.Errorf("FS: file does not exists [%s] locally", msg.Key)
 	}
-	r, err := s.store.Read(msg.Key)
+	fileSize, r, err := s.store.Read(msg.Key)
 	if err != nil {
 		return err
+	}
+
+	if rc, ok := r.(io.ReadCloser); ok {
+		fmt.Println("closing the readCloser")
+		defer rc.Close()
 	}
 
 	peer, ok := s.peers[from]
@@ -193,6 +201,8 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 		return fmt.Errorf("peer %s not found", from)
 	}
 
+	peer.Send([]byte{peertopeer.IncomingStream})
+	binary.Write(peer, binary.LittleEndian, fileSize)
 	n, err := io.Copy(peer, r)
 	if err != nil {
 		return err

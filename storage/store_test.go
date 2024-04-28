@@ -14,7 +14,7 @@ func TestStoreDeleteKey(t *testing.T) {
 	defer tearDown(t, s)
 	key := "xyz"
 	data := []byte("some random bytes")
-	if err := s.writeStream(key, bytes.NewReader(data)); err != nil {
+	if _, err := s.writeStream(key, bytes.NewReader(data)); err != nil {
 		t.Error(err)
 	}
 	if err := s.Delete(key); err != nil {
@@ -28,10 +28,10 @@ func TestStore(t *testing.T) {
 	key := "xyz"
 	data := []byte("some random bytes")
 
-	if err := s.writeStream(key, bytes.NewReader(data)); err != nil {
+	if _, err := s.writeStream(key, bytes.NewReader(data)); err != nil {
 		t.Error(err)
 	}
-	r, err := s.Read(key)
+	_, r, err := s.Read(key)
 	if err != nil {
 		t.Error(err)
 	}

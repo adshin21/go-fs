@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"bytes"
 	"io"
 	"log"
 	"os"
@@ -31,16 +30,8 @@ func NewStore(opts StoreOpts) *Store {
 	}
 }
 
-func (s *Store) Read(key string) (io.Reader, error) {
-	f, err := s.readStream(key)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	buf := new(bytes.Buffer)
-	_, err = io.Copy(buf, f)
-	return buf, err
+func (s *Store) Read(key string) (int64, io.Reader, error) {
+	return s.readStream(key)
 }
 
 func (s *Store) Write(key string, r io.Reader) (int64, error) {
@@ -87,9 +78,17 @@ func (s *Store) writeStream(key string, r io.Reader) (int64, error) {
 	return n, nil
 }
 
-func (s *Store) readStream(key string) (io.ReadCloser, error) {
+func (s *Store) readStream(key string) (int64, io.ReadCloser, error) {
 	path := s.getCompleteFilePath(key)
-	return os.Open(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, nil, err
+	}
+	stat, err := file.Stat()
+	if err != nil {
+		return 0, nil, err
+	}
+	return stat.Size(), file, nil
 }
 
 func (s *Store) getCompleteFilePath(key string) string {
