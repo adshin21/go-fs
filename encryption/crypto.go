@@ -4,6 +4,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 )
 
@@ -13,6 +15,37 @@ func NewEncrpytionKey() []byte {
 		panic(err)
 	}
 	return key
+}
+
+func Hash(key string) string {
+	// SHA256 hash algorithm
+	h := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(h[:])
+}
+
+func copyStream(stream cipher.Stream, blcSz int, src io.Reader, dst io.Writer) (int, error) {
+	buf := make([]byte, 32*1024)
+	bw := blcSz
+
+	for {
+		n, err := src.Read(buf)
+
+		if n > 0 {
+			stream.XORKeyStream(buf, buf[:n])
+			sz, err := dst.Write(buf[:n])
+			if err != nil {
+				return 0, err
+			}
+			bw += sz
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+	return bw, nil
 }
 
 func CopyDecrypt(key []byte, src io.Reader, dst io.Writer) (int, error) {
@@ -25,29 +58,11 @@ func CopyDecrypt(key []byte, src io.Reader, dst io.Writer) (int, error) {
 	if _, err := src.Read(iv); err != nil {
 		return 0, err
 	}
-	buf := make([]byte, 32*1024)
+
 	stream := cipher.NewCTR(block, iv)
-	mw := block.BlockSize()
+	nw := block.BlockSize()
+	return copyStream(stream, nw, src, dst)
 
-	for {
-		n, err := src.Read(buf)
-
-		if n > 0 {
-			stream.XORKeyStream(buf, buf[:n])
-			sz, err := dst.Write(buf[:n])
-			if err != nil {
-				return 0, err
-			}
-			mw += sz
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return 0, err
-		}
-	}
-	return mw, nil
 }
 
 func CopyEncrypt(key []byte, src io.Reader, dst io.Writer) (int, error) {
@@ -66,27 +81,7 @@ func CopyEncrypt(key []byte, src io.Reader, dst io.Writer) (int, error) {
 		return 0, err
 	}
 
-	buf := make([]byte, 32*1024)
 	stream := cipher.NewCTR(block, iv)
-	mw := block.BlockSize()
-
-	for {
-		n, err := src.Read(buf)
-
-		if n > 0 {
-			stream.XORKeyStream(buf, buf[:n])
-			sz, err := dst.Write(buf[:n])
-			if err != nil {
-				return 0, err
-			}
-			mw += sz
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return 0, err
-		}
-	}
-	return mw, nil
+	nw := block.BlockSize()
+	return copyStream(stream, nw, src, dst)
 }

@@ -37,13 +37,7 @@ func (s *Store) Read(key string) (int64, io.Reader, error) {
 }
 
 func (s *Store) WriteDecrypt(encKey []byte, key string, r io.Reader) (int64, error) {
-	dir := s.getParentDir(key)
-	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-		return 0, err
-	}
-
-	comPath := s.getCompleteFilePath(key)
-	f, err := os.Create(comPath)
+	f, err := s.openFileForWriting(key)
 	if err != nil {
 		return 0, err
 	}
@@ -55,6 +49,32 @@ func (s *Store) WriteDecrypt(encKey []byte, key string, r io.Reader) (int64, err
 
 func (s *Store) Write(key string, r io.Reader) (int64, error) {
 	return s.writeStream(key, r)
+}
+
+func (s *Store) writeStream(key string, r io.Reader) (int64, error) {
+	f, err := s.openFileForWriting(key)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	n, err := io.Copy(f, r)
+	if err != nil {
+		return 0, err
+	}
+
+	log.Printf("STORAGE: written (%d) bytes to disk", n)
+	return n, nil
+}
+
+func (s *Store) openFileForWriting(key string) (*os.File, error) {
+	dir := s.getParentDir(key)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		return nil, err
+	}
+
+	comPath := s.getCompleteFilePath(key)
+	return os.Create(comPath)
 }
 
 func (s *Store) Delete(key string) error {
@@ -73,28 +93,6 @@ func (s *Store) Has(key string) bool {
 		return false
 	}
 	return true
-}
-
-func (s *Store) writeStream(key string, r io.Reader) (int64, error) {
-	dir := s.getParentDir(key)
-	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-		return 0, err
-	}
-
-	comPath := s.getCompleteFilePath(key)
-	f, err := os.Create(comPath)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-
-	n, err := io.Copy(f, r)
-	if err != nil {
-		return 0, err
-	}
-
-	log.Printf("STORAGE: written (%d) bytes to disk: %s", n, comPath)
-	return n, nil
 }
 
 func (s *Store) readStream(key string) (int64, io.ReadCloser, error) {

@@ -57,7 +57,7 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 	fmt.Printf("don't have file [%s] locally\n", key)
 	msg := Message{
 		Payload: MessageGetFile{
-			Key: key,
+			Key: encryption.Hash(key),
 		},
 	}
 	if err := s.broadcast(&msg); err != nil {
@@ -95,7 +95,7 @@ func (s *FileServer) StoreData(key string, r io.Reader) error {
 
 	msg := Message{
 		Payload: MessageStoreFile{
-			Key:  key,
+			Key:  encryption.Hash(key),
 			Size: n + 16, // 16 bytes for the encrytion IV
 		},
 	}
@@ -105,17 +105,19 @@ func (s *FileServer) StoreData(key string, r io.Reader) error {
 	}
 
 	time.Sleep(time.Second * 3)
-
+	peers := []io.Writer{}
 	for _, peer := range s.peers {
-		peer.Send([]byte{peertopeer.IncomingStream})
-		x, err := encryption.CopyEncrypt(s.EncKey, buf, peer)
-		// x, err := io.Copy(peer, buf)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("received and written %d bytes to disk\n", x)
+		peers = append(peers, peer)
 	}
 
+	mw := io.MultiWriter(peers...)
+	mw.Write([]byte{peertopeer.IncomingStream})
+	x, err := encryption.CopyEncrypt(s.EncKey, buf, mw)
+	// x, err := io.Copy(peer, buf)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("[%s] received and written %d bytes to disk\n", s.Transport.Addr(), x)
 	return nil
 }
 
@@ -129,6 +131,7 @@ func NewFileServer(opts FileServerOpts) *FileServer {
 }
 
 func (s *FileServer) Start() error {
+	fmt.Printf("[%s] file server starting\n", s.Transport.Addr())
 	if err := s.Transport.ListenAndAccept(); err != nil {
 		return err
 	}
