@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/adshin21/go-fs/encryption"
 	"github.com/adshin21/go-fs/peertopeer"
 	"github.com/adshin21/go-fs/storage"
 )
@@ -30,6 +31,7 @@ type MessageGetFile struct {
 // Same like transport options with
 // storage options
 type FileServerOpts struct {
+	EncKey         []byte
 	Transport      peertopeer.Transport
 	StoreOpts      storage.StoreOpts
 	BootstrapNodes []string
@@ -65,7 +67,8 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 	for _, peer := range s.peers {
 		var fileSize int64
 		binary.Read(peer, binary.LittleEndian, &fileSize)
-		n, err := s.store.Write(key, io.LimitReader(peer, fileSize))
+		n, err := s.store.WriteDecrypt(s.EncKey, key, io.LimitReader(peer, fileSize))
+		// n, err := s.store.Write(key, io.LimitReader(peer, fileSize))
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +96,7 @@ func (s *FileServer) StoreData(key string, r io.Reader) error {
 	msg := Message{
 		Payload: MessageStoreFile{
 			Key:  key,
-			Size: n,
+			Size: n + 16, // 16 bytes for the encrytion IV
 		},
 	}
 
@@ -105,7 +108,8 @@ func (s *FileServer) StoreData(key string, r io.Reader) error {
 
 	for _, peer := range s.peers {
 		peer.Send([]byte{peertopeer.IncomingStream})
-		x, err := io.Copy(peer, buf)
+		x, err := encryption.CopyEncrypt(s.EncKey, buf, peer)
+		// x, err := io.Copy(peer, buf)
 		if err != nil {
 			return err
 		}

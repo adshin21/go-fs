@@ -4,6 +4,8 @@ import (
 	"io"
 	"log"
 	"os"
+
+	"github.com/adshin21/go-fs/encryption"
 )
 
 type StoreOpts struct {
@@ -32,6 +34,23 @@ func NewStore(opts StoreOpts) *Store {
 
 func (s *Store) Read(key string) (int64, io.Reader, error) {
 	return s.readStream(key)
+}
+
+func (s *Store) WriteDecrypt(encKey []byte, key string, r io.Reader) (int64, error) {
+	dir := s.getParentDir(key)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		return 0, err
+	}
+
+	comPath := s.getCompleteFilePath(key)
+	f, err := os.Create(comPath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	n, err := encryption.CopyDecrypt(encKey, r, f)
+	return int64(n), err
 }
 
 func (s *Store) Write(key string, r io.Reader) (int64, error) {
